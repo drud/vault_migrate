@@ -1,0 +1,13 @@
+{
+	"comment": "",
+	"ignore": "test",
+	"package": [
+		{
+			"checksumSHA1": "swUAezvP3KZEPH6ppLPIhsgilws=",
+			"path": "github.com/hashicorp/vault",
+			"revision": "5a467432bf76271965f4facf5f4c0a61ce25218d",
+			"revisionTime": "2016-11-17T20:17:31Z"
+		}
+	],
+	"rootPath": "github.com/rfay/vault_migrate"
+}
