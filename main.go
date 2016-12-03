@@ -13,7 +13,7 @@ import (
 )
 
 
-
+// Simple count of how many secrets handled
 var copyCount int
 
 func main() {
@@ -78,6 +78,7 @@ func confirm(prompt string) {
 	}
 }
 
+// Recursively copy secrets from one vault to another
 func recursiveCopy(sourceVault vaultAPI.Logical, sourceKey string, targetVault vaultAPI.Logical, targetKey string, destroyValues bool) {
 
 	result := list(sourceVault, sourceKey)
@@ -128,7 +129,7 @@ func recursiveCopy(sourceVault vaultAPI.Logical, sourceKey string, targetVault v
 	}
 }
 
-
+// Return keys under a pat as array of strings
 func list(vault vaultAPI.Logical, path string) []string {
 	list, err := vault.List(path)
 	var resultList []string
@@ -150,6 +151,7 @@ func list(vault vaultAPI.Logical, path string) []string {
 }
 
 
+// Get vault object using token + vault_addr
 func getVault(token string, vaultAddr string) vaultAPI.Logical {
 	var err error
 	var vault vaultAPI.Logical
@@ -172,6 +174,7 @@ func getVault(token string, vaultAddr string) vaultAPI.Logical {
 }
 
 
+// Recursively delete secrets in targetVault starting at targetKey
 func recursiveDelete(targetVault vaultAPI.Logical, targetKey string) {
 	result := list(targetVault, targetKey)
 
