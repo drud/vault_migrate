@@ -4,6 +4,11 @@ import (
 	"log"
 	vaultAPI "github.com/hashicorp/vault/api"
 	"flag"
+	"time"
+	"math/rand"
+	"bufio"
+	"os"
+	"fmt"
 )
 
 
@@ -11,15 +16,20 @@ import (
 
 func main() {
 
+	// Initialize random number generator for text destroyer
+	rand.Seed(int64(time.Nanosecond));
+
 	var sourceVaultAddr, sourceToken, sourceRoot, targetVaultAddr, targetToken, targetRoot string
 	var deleteOnly bool
+	var destroyValues bool = true
 	flag.StringVar(&sourceVaultAddr, "sourceVaultAddr", "", "vault_addr for the copy-from vault, like https://example.com:8200")
 	flag.StringVar(&sourceToken, "sourceToken", "", "Token for sourceVaultAddr - best to have read privs only")
 	flag.StringVar(&sourceRoot, "sourceRoot", "/secret/", "Root in source tree to start copying from")
 	flag.StringVar(&targetVaultAddr, "targetVaultAddr", "", "vault_addr for the copy-to vault, like https://example2.com:8200")
 	flag.StringVar(&targetToken, "targetToken", "", "Token for targetVaultAddr - must have write privs")
 	flag.StringVar(&targetRoot, "targetRoot", "/secret/copy2", "Root in target tree to start copying to")
-	flag.BoolVar(&deleteOnly, "deleteOnly", false, "Set to non-nil to delete from targetRoot on targetVaultAddr")
+	flag.BoolVar(&deleteOnly, "deleteOnly", false, "Set to true to delete from targetRoot on targetVaultAddr")
+	flag.BoolVar(&destroyValues, "destroyValues", true, "Set to false to turn off the value-destroying function")
 	flag.Parse()
 
 
@@ -38,15 +48,34 @@ func main() {
 	sourceVault := getVault(sourceToken, sourceVaultAddr)
 	targetVault := getVault(targetToken, targetVaultAddr)
 
+	confirm("Are you sure you want to continue? [y/n]")
+
 	if (deleteOnly) {
 		recursiveDelete(targetVault, targetRoot);
 		return
 	}
-	recursiveCopy(sourceVault, sourceRoot, targetVault, targetRoot)
+	recursiveCopy(sourceVault, sourceRoot, targetVault, targetRoot, destroyValues)
 }
 
+// return string of same length, but completely destroyed and unrecoverable
+func destroyText(plainText string) string {
+	var newText string;
+	for i:=0; i<len(plainText); i++ {
+		newText = newText + string(plainText[i] ^ byte(rand.Int()))
+	}
+	return newText
+}
 
-func recursiveCopy(sourceVault vaultAPI.Logical, sourceKey string, targetVault vaultAPI.Logical, targetKey string) {
+func confirm(prompt string) {
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Print(prompt + ":")
+	response, _ := reader.ReadString('\n')
+	if (response != "y\n") {
+		log.Fatal("Use 'y' to continue")
+	}
+}
+
+func recursiveCopy(sourceVault vaultAPI.Logical, sourceKey string, targetVault vaultAPI.Logical, targetKey string, destroyValues bool) {
 
 	result := list(sourceVault, sourceKey)
 
@@ -62,7 +91,7 @@ func recursiveCopy(sourceVault vaultAPI.Logical, sourceKey string, targetVault v
 			// Remove the trailing slash
 			fullTargetKey = fullTargetKey[0:len(fullTargetKey)-1]
 			fullSourceKey = fullSourceKey[0:len(fullSourceKey)-1]
-			recursiveCopy(sourceVault, fullSourceKey, targetVault, fullTargetKey)
+			recursiveCopy(sourceVault, fullSourceKey, targetVault, fullTargetKey, destroyValues)
 			continue
 		}
 
@@ -71,17 +100,21 @@ func recursiveCopy(sourceVault vaultAPI.Logical, sourceKey string, targetVault v
 			log.Panic(err)
 		}
 
-		data := value.Data
+		// Default case is we'll destroy all values, leaving keys untouched - to prevent
+		// accidental disclosure before actual production migration.
+		if destroyValues {
+			for k, v := range value.Data {
+				//log.Println("k:", k, "v:", v)
+				value.Data[k] = destroyText(v.(string))
+				log.Printf("k=%s value changed from %s to %s", k, v, value.Data[k])
+			}
+		}
 
-
-		_, err = targetVault.Write(fullTargetKey, data)
+		_, err = targetVault.Write(fullTargetKey, value.Data)
 		if (err != nil) {
 			log.Panic(err)
 		}
-		// Might not be *value*
-		// stringval := data["value"].(string)
-		//log.Printf("stringval of data is %v", stringval);
-		log.Printf("Wrote key from source=%v to target=%v (value=%v)", fullSourceKey, fullTargetKey, data)
+		log.Printf("Wrote key from source=%v to target=%v (value=%v)", fullSourceKey, fullTargetKey, value.Data)
 
 	}
 }
