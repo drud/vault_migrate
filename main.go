@@ -20,8 +20,7 @@ func main() {
 	rand.Seed(int64(time.Nanosecond));
 
 	var sourceVaultAddr, sourceToken, sourceRoot, targetVaultAddr, targetToken, targetRoot string
-	var deleteOnly bool
-	var destroyValues bool = true
+	var deleteOnly, destroyValues bool
 	flag.StringVar(&sourceVaultAddr, "sourceVaultAddr", "", "vault_addr for the copy-from vault, like https://example.com:8200")
 	flag.StringVar(&sourceToken, "sourceToken", "", "Token for sourceVaultAddr - best to have read privs only")
 	flag.StringVar(&sourceRoot, "sourceRoot", "/secret/", "Root in source tree to start copying from")
@@ -37,13 +36,14 @@ func main() {
 		if targetVaultAddr == "" || targetRoot == "" {
 			log.Fatal("-targetVaultAddr and -targetRoot must be set in order to delete from target")
 		}
-		log.Printf("Deleting from %s:%s", targetVaultAddr, targetRoot)
+		fmt.Printf("Deleting from %s:%s\n", targetVaultAddr, targetRoot)
 	} else {
 		if sourceVaultAddr == "" || sourceRoot == "" || targetVaultAddr == "" || targetRoot == "" {
 			log.Fatal("both vault and root must be set in order to copy")
 		}
 
-		log.Printf("Copying from %s:%s to %s:%s", sourceVaultAddr, sourceRoot, targetVaultAddr, targetRoot)
+		fmt.Printf("Copying from %s:%s to %s:%s\n", sourceVaultAddr, sourceRoot, targetVaultAddr, targetRoot)
+		fmt.Printf("String values will be destroyed on write because destroyValues == true\n")
 	}
 	sourceVault := getVault(sourceToken, sourceVaultAddr)
 	targetVault := getVault(targetToken, targetVaultAddr)
@@ -104,9 +104,11 @@ func recursiveCopy(sourceVault vaultAPI.Logical, sourceKey string, targetVault v
 		// accidental disclosure before actual production migration.
 		if destroyValues {
 			for k, v := range value.Data {
-				//log.Println("k:", k, "v:", v)
-				value.Data[k] = destroyText(v.(string))
-				log.Printf("k=%s value changed from %s to %s", k, v, value.Data[k])
+				// Only destroy string value types
+				if _, ok := v.(string); ok {
+					value.Data[k] = destroyText(v.(string))
+					log.Printf("k=%s value changed from %s to %s", k, v, value.Data[k])
+				}
 			}
 		}
 
