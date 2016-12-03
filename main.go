@@ -9,10 +9,12 @@ import (
 	"bufio"
 	"os"
 	"fmt"
+	"reflect"
 )
 
 
 
+var copyCount int
 
 func main() {
 
@@ -66,6 +68,7 @@ func destroyText(plainText string) string {
 	return newText
 }
 
+// Simple confirmation prompt. 'y\n' is required to continue
 func confirm(prompt string) {
 	reader := bufio.NewReader(os.Stdin)
 	fmt.Print(prompt + ":")
@@ -107,7 +110,10 @@ func recursiveCopy(sourceVault vaultAPI.Logical, sourceKey string, targetVault v
 				// Only destroy string value types
 				if _, ok := v.(string); ok {
 					value.Data[k] = destroyText(v.(string))
-					log.Printf("k=%s value changed from %s to %s", k, v, value.Data[k])
+					//log.Printf("k=%s value destroyed.", k)
+				} else {
+					value.Data[k] = "Complex value replaced"
+					log.Printf("Replacing complex value for key=%s because value is of type %s", k, reflect.TypeOf(v))
 				}
 			}
 		}
@@ -116,7 +122,8 @@ func recursiveCopy(sourceVault vaultAPI.Logical, sourceKey string, targetVault v
 		if (err != nil) {
 			log.Panic(err)
 		}
-		log.Printf("Wrote key from source=%v to target=%v (value=%v)", fullSourceKey, fullTargetKey, value.Data)
+		copyCount = copyCount+1
+		log.Printf("Wrote key from source=%v to target=%v count=%d", fullSourceKey, fullTargetKey, copyCount)
 
 	}
 }
