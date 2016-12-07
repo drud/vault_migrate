@@ -14,7 +14,7 @@ import (
 
 
 // Simple count of how many secrets handled
-var copyCount int
+var itemCount int
 
 func main() {
 
@@ -22,7 +22,7 @@ func main() {
 	rand.Seed(int64(time.Nanosecond));
 
 	var sourceVaultAddr, sourceToken, sourceRoot, targetVaultAddr, targetToken, targetRoot string
-	var deleteOnly, destroyValues bool
+	var deleteOnly, readOnly, destroyValues bool
 	flag.StringVar(&sourceVaultAddr, "sourceVaultAddr", "", "vault_addr for the copy-from vault, like https://example.com:8200")
 	flag.StringVar(&sourceToken, "sourceToken", "", "Token for sourceVaultAddr - best to have read privs only")
 	flag.StringVar(&sourceRoot, "sourceRoot", "/secret/", "Root in source tree to start copying from")
@@ -30,22 +30,35 @@ func main() {
 	flag.StringVar(&targetToken, "targetToken", "", "Token for targetVaultAddr - must have write privs")
 	flag.StringVar(&targetRoot, "targetRoot", "/secret/copy2", "Root in target tree to start copying to")
 	flag.BoolVar(&deleteOnly, "deleteOnly", false, "Set to true to delete from targetRoot on targetVaultAddr")
+	flag.BoolVar(&readOnly, "readOnly", false, "Set to true to recursively reaad from targetRoot on targetVaultAddr - for performance and load testing")
 	flag.BoolVar(&destroyValues, "destroyValues", true, "Set to false to turn off the value-destroying function")
 	flag.Parse()
 
 
-	if deleteOnly != false {
+	switch {
+	case readOnly == true:
+		if targetVaultAddr == "" || targetRoot == "" {
+			log.Fatal("-targetVaultAddr and -targetRoot must be set in order to read from target")
+		}
+		fmt.Printf("Reading recursively from %s:%s\n", targetVaultAddr, targetRoot)
+
+	case deleteOnly == true:
 		if targetVaultAddr == "" || targetRoot == "" {
 			log.Fatal("-targetVaultAddr and -targetRoot must be set in order to delete from target")
 		}
 		fmt.Printf("Deleting from %s:%s\n", targetVaultAddr, targetRoot)
-	} else {
+
+	default:  // Copy - basic usage of the utility
 		if sourceVaultAddr == "" || sourceRoot == "" || targetVaultAddr == "" || targetRoot == "" {
 			log.Fatal("both vault and root must be set in order to copy")
 		}
 
 		fmt.Printf("Copying from %s:%s to %s:%s\n", sourceVaultAddr, sourceRoot, targetVaultAddr, targetRoot)
-		fmt.Printf("String values will be destroyed on write because destroyValues == true\n")
+		if destroyValues {
+			fmt.Printf("Secret values will be destroyed on write because destroyValues == true\n")
+		} else {
+			fmt.Printf("Secret values will be copied as-is, make sure target is secure.\n")
+		}
 	}
 	sourceVault := getVault(sourceToken, sourceVaultAddr)
 	targetVault := getVault(targetToken, targetVaultAddr)
@@ -55,8 +68,11 @@ func main() {
 	if (deleteOnly) {
 		recursiveDelete(targetVault, targetRoot);
 		return
+	} else if (readOnly) {
+		recursiveRead(targetVault, targetRoot)
+	} else {
+		recursiveCopy(sourceVault, sourceRoot, targetVault, targetRoot, destroyValues)
 	}
-	recursiveCopy(sourceVault, sourceRoot, targetVault, targetRoot, destroyValues)
 }
 
 // return string of same length, but completely destroyed and unrecoverable
@@ -123,11 +139,43 @@ func recursiveCopy(sourceVault vaultAPI.Logical, sourceKey string, targetVault v
 		if (err != nil) {
 			log.Panic(err)
 		}
-		copyCount = copyCount+1
-		log.Printf("Wrote key from source=%v to target=%v count=%d", fullSourceKey, fullTargetKey, copyCount)
+		itemCount = itemCount +1
+		log.Printf("Wrote key from source=%v to target=%v count=%d", fullSourceKey, fullTargetKey, itemCount)
 
 	}
 }
+
+
+// Recursively read secrets from targetVault
+func recursiveRead(targetVault vaultAPI.Logical, targetKey string) {
+
+	result := list(targetVault, targetKey)
+
+	for _, key := range result  {
+
+
+		fullTargetKey := targetKey + "/" + key
+		lastChar := fullTargetKey[len(fullTargetKey)-1:]
+
+		// If the key ends in / we have to recursively read its keys
+		if lastChar == "/" {
+			// Remove the trailing slash
+			fullTargetKey = fullTargetKey[0:len(fullTargetKey)-1]
+			recursiveRead(targetVault, fullTargetKey)
+			continue
+		}
+
+		_, err := targetVault.Read(fullTargetKey)
+		if (err != nil) {
+			log.Panic(err)
+		}
+
+		itemCount = itemCount +1
+		log.Printf("Read key from source=%v count=%d", fullTargetKey, itemCount)
+
+	}
+}
+
 
 // Return keys under a pat as array of strings
 func list(vault vaultAPI.Logical, path string) []string {
